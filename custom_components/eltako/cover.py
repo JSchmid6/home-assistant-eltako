@@ -73,9 +73,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         self._time_tilts = time_tilts
         
         self._attr_supported_features = (CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP)
-        
-        if time_tilts is not None:
-            self._attr_supported_features |= CoverEntityFeature.SET_TILT_POSITION
+        # Automations need this feature otherwise we got a lot of errors in log
+        self._attr_supported_features |= CoverEntityFeature.SET_TILT_POSITION
 
         if time_closes is not None and time_opens is not None:
             self._attr_supported_features |= CoverEntityFeature.SET_POSITION
@@ -325,7 +324,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
     def set_cover_tilt_position(self, **kwargs: Any) -> None:
         address, _ = self._sender_id
         tilt_position = kwargs[ATTR_TILT_POSITION]
-        
+        self._attr_current_cover_tilt_position = self._attr_current_cover_tilt_position or 0.0 # ignore none values here
         if tilt_position == self._attr_current_cover_tilt_position:
             return
         elif tilt_position > self._attr_current_cover_tilt_position:
