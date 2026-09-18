@@ -94,8 +94,12 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         # LOGGER.debug(f"[cover {self.dev_id}] latest state: {latest_state.state}")
         # LOGGER.debug(f"[cover {self.dev_id}] latest state attributes: {latest_state.attributes}")
         try:
+            ## the restored numeric position is more precise than the generic open/closed
+            ## state, so it wins. open/closed is only a fallback if no position was stored,
+            ## otherwise a partly open cover jumps to 100 % after every restart. (issue #212)
+            tilt_supported = CoverEntityFeature.SET_TILT_POSITION in self._attr_supported_features
             self._attr_current_cover_position = latest_state.attributes.get('current_position')
-            self._attr_current_cover_tilt_position = latest_state.attributes.get('current_tilt_position') if CoverEntityFeature.SET_TILT_POSITION in self._attr_supported_features else None
+            self._attr_current_cover_tilt_position = latest_state.attributes.get('current_tilt_position') if tilt_supported else None
 
             #if self._attr_current_cover_tilt_position == 0:
             #    self._attr_current_cover_tilt_position = 0
@@ -103,14 +107,18 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
                 self._attr_is_opening = False
                 self._attr_is_closing = False
                 self._attr_is_closed = False
-                self._attr_current_cover_position = 100
-                self._attr_current_cover_tilt_position = 100 if CoverEntityFeature.SET_TILT_POSITION in self._attr_supported_features else None
+                if self._attr_current_cover_position is None:
+                    self._attr_current_cover_position = 100
+                if tilt_supported and self._attr_current_cover_tilt_position is None:
+                    self._attr_current_cover_tilt_position = 100
             elif latest_state.state == STATE_CLOSED:
                 self._attr_is_opening = False
                 self._attr_is_closing = False
                 self._attr_is_closed = True
-                self._attr_current_cover_position = 0
-                self._attr_current_cover_tilt_position = 0 if CoverEntityFeature.SET_TILT_POSITION in self._attr_supported_features else None
+                if self._attr_current_cover_position is None:
+                    self._attr_current_cover_position = 0
+                if tilt_supported and self._attr_current_cover_tilt_position is None:
+                    self._attr_current_cover_tilt_position = 0
             elif latest_state.state == STATE_CLOSING:
                 self._attr_is_opening = False
                 self._attr_is_closing = True
@@ -127,7 +135,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             self._attr_is_closing = None
             self._attr_is_closed = None # means undefined state
             # raise e
-        
+            LOGGER.warning(f"[cover {self.dev_id}] Cannot restore last state '{latest_state.state}': {e}")
+
         self.schedule_update_ha_state()
         LOGGER.debug(f"[cover {self.dev_id}] value initially loaded: [" 
                      + f"is_opening: {self.is_opening}, "
