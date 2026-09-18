@@ -425,7 +425,8 @@ async def async_setup_entry(
     entities.append(GatewayLastReceivedMessage(platform, gateway))
     entities.append(GatewayReceivedMessagesInActiveSession(platform, gateway))
 
-    validate_actuators_dev_and_sender_id(entities)
+    # Sensor-platform entities include gateway info fields and wireless/bus sensors.
+    # Actuator id validation is not meaningful here and creates false warnings.
     log_entities_to_be_added(entities, platform)
     async_add_entities(entities)
 
