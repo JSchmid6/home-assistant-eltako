@@ -909,8 +909,9 @@ class GatewayReceivedMessagesInActiveSession(EltakoSensor):
                             state_class=SensorStateClass.TOTAL_INCREASING,
                             # device_class=SensorDeviceClass.VOLUME,
                             # native_unit_of_measurement="Messages", # => raises error message
-                            unit_of_measurement="Messages",
-                            suggested_unit_of_measurement="Messages",
+                            # "Messages" is no valid unit and makes HA reject the state
+                            unit_of_measurement=None,
+                            suggested_unit_of_measurement=None,
                             icon="mdi:chart-line",
                         )
         )
