@@ -1,5 +1,11 @@
 # Changes and Feature List
 
+## Version 1.5.11 Bugfix Covers and Sensors
+* Covers with Wendeautomatik (FSB14) stay closed after the short automatic reverse run
+* Partly open covers keep their position after a restart of Home Assistant
+* Covers without configured tilt time do not report a tilt position anymore
+* Sensor platform: no false warnings about actuator ids, no invalid unit for the message counter
+
 ## Version 1.5.10 Bugfix Covers
 * Initialization problem through unknown initial position 
 
