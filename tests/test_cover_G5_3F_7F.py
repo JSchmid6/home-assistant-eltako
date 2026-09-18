@@ -99,7 +99,8 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec._attr_is_opening, False)
         self.assertEqual(ec._attr_is_closed, True)
         self.assertEqual(ec._attr_current_cover_position, 0)
-        self.assertEqual(ec._attr_current_cover_tilt_position, 0)
+        # no tilt time configured => no tilt state
+        self.assertEqual(ec._attr_current_cover_tilt_position, None)
 
         # device send acknowledgement for opened
         msg = RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x70', outgoing=False)
@@ -108,7 +109,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec._attr_is_opening, False)
         self.assertEqual(ec._attr_is_closed, False)
         self.assertEqual(ec._attr_current_cover_position, 100)
-        self.assertEqual(ec._attr_current_cover_tilt_position, 100)
+        self.assertEqual(ec._attr_current_cover_tilt_position, None)
 
 
 
@@ -304,7 +305,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, False)
         self.assertEqual(ec.state, 'opening')
         self.assertEqual(ec.current_cover_position, 55)
-        self.assertEqual(ec.current_cover_tilt_position, 20)
+        self.assertEqual(ec.current_cover_tilt_position, None)
 
     def test_initial_loading_closing(self):
         ec = self.create_cover()
@@ -318,7 +319,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, True)
         self.assertEqual(ec.state, 'closing')
         self.assertEqual(ec.current_cover_position, 33)
-        self.assertEqual(ec.current_cover_tilt_position, 10)
+        self.assertEqual(ec.current_cover_tilt_position, None)
 
     def test_initial_loading_open(self):
         ec = self.create_cover()
@@ -332,7 +333,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, False)
         self.assertEqual(ec.state, 'open')
         self.assertEqual(ec.current_cover_position, 100)
-        self.assertEqual(ec.current_cover_tilt_position, 100)
+        self.assertEqual(ec.current_cover_tilt_position, None)
 
     def test_initial_loading_closed(self):
         ec = self.create_cover()
@@ -346,7 +347,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, False)
         self.assertEqual(ec.state, 'closed')
         self.assertEqual(ec.current_cover_position, 0)
-        self.assertEqual(ec.current_cover_tilt_position, 0)
+        self.assertEqual(ec.current_cover_tilt_position, None)
 
 
 
