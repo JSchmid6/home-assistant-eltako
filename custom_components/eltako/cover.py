@@ -21,6 +21,13 @@ from .const import CONF_SENDER, CONF_TIME_CLOSES, CONF_TIME_OPENS, CONF_TIME_TIL
 from . import get_gateway_from_hass, get_device_config_for_gateway
 import time
 
+# FSB14 actuators with "Wendeautomatik" briefly reverse the cover after it has
+# reached the lower end position in order to relieve the curtain. The actuator
+# reports this as a short upward run right after the "closed" telegram, which
+# must not be counted as an intermediate position. (issue #221)
+REVERSE_PULSE_MAX_DURATION_IN_SECONDS = 1.0
+REVERSE_PULSE_MAX_DELAY_AFTER_CLOSED_IN_SECONDS = 5.0
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: config_entries.ConfigEntry,
@@ -71,7 +78,9 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         self._time_closes = time_closes
         self._time_opens = time_opens
         self._time_tilts = time_tilts
-        
+        # monotonic timestamp of the last "closed" telegram, see REVERSE_PULSE_* constants
+        self._closed_reported_at = None
+
         self._attr_supported_features = (CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP)
         
         if time_tilts is not None:
@@ -268,6 +277,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
                 self._attr_is_closed = True
                 self._attr_current_cover_position = 0
                 self._attr_current_cover_tilt_position = 0 if CoverEntityFeature.SET_TILT_POSITION in self._attr_supported_features else None
+                self._closed_reported_at = time.monotonic()
             elif decoded.state == 0x01: # up
                 self._attr_is_opening = True
                 self._attr_is_closing = False
@@ -284,6 +294,23 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             elif decoded.time is not None and decoded.direction is not None and self._time_closes is not None and self._time_opens is not None:
 
                 time_in_seconds = decoded.time / 10.0
+
+                ## "Wendeautomatik": a short upward run shortly after the cover reported
+                ## "closed" belongs to the closing run and is no intermediate position.
+                ## Runs started from HA end without a "closed" telegram and are not affected.
+                if (decoded.direction == 0x01
+                        and time_in_seconds <= REVERSE_PULSE_MAX_DURATION_IN_SECONDS
+                        and self._closed_reported_at is not None
+                        and time.monotonic() - self._closed_reported_at <= REVERSE_PULSE_MAX_DELAY_AFTER_CLOSED_IN_SECONDS):
+                    self._attr_is_opening = False
+                    self._attr_is_closing = False
+                    self._attr_is_closed = True
+                    self._attr_current_cover_position = 0
+                    self._attr_current_cover_tilt_position = 0 if CoverEntityFeature.SET_TILT_POSITION in self._attr_supported_features else None
+                    self._closed_reported_at = None
+                    LOGGER.debug(f"[cover {self.dev_id}] ignored reverse pulse of {time_in_seconds}s after closing, staying closed")
+                    self.schedule_update_ha_state()
+                    return
 
                 if decoded.direction == 0x01:  # up
                     # If the latest state is unknown, the cover position
