@@ -4,7 +4,8 @@ from tests.mocks import *
 from unittest import mock, IsolatedAsyncioTestCase, TestCase
 from homeassistant.helpers.entity import Entity
 from homeassistant.const import Platform
-from custom_components.eltako.cover import EltakoCover
+import time
+from custom_components.eltako.cover import EltakoCover, REVERSE_PULSE_MAX_DELAY_AFTER_CLOSED_IN_SECONDS
 from custom_components.eltako.device import EltakoEntity
 from eltakobus import *
 from custom_components.eltako.config_helpers import DEFAULT_GENERAL_SETTINGS
@@ -348,6 +349,67 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.state, 'closed')
         self.assertEqual(ec.current_cover_position, 0)
         self.assertEqual(ec.current_cover_tilt_position, None)
+
+    def test_reverse_pulse_after_closing_keeps_cover_closed(self):
+        """FSB14 with Wendeautomatik: a short up run right after 'closed' must not open the cover."""
+        ec = self.create_cover()
+
+        # device reports closed
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        # device reports the automatic reverse run: 0.5 s, direction up
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, True)
+        self.assertEqual(ec._attr_is_opening, False)
+        self.assertEqual(ec._attr_is_closing, False)
+        self.assertEqual(ec._attr_current_cover_position, 0)
+
+    def test_long_up_run_after_closing_is_no_reverse_pulse(self):
+        ec = self.create_cover()
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        # 3.0 s, direction up => regular movement to an intermediate position
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x1e\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 30)
+
+    def test_late_up_run_is_no_reverse_pulse(self):
+        ec = self.create_cover()
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        # the closed telegram is older than the accepted delay
+        ec._closed_reported_at = time.monotonic() - (REVERSE_PULSE_MAX_DELAY_AFTER_CLOSED_IN_SECONDS + 1.0)
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 5)
+
+    def test_initial_loading_open_keeps_intermediate_position(self):
+        """A partly open cover must not jump to 100 % after a restart."""
+        ec = self.create_cover()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('open', {'current_position': 42}))
+        self.assertEqual(ec.is_closed, False)
+        self.assertEqual(ec.state, 'open')
+        self.assertEqual(ec.current_cover_position, 42)
+
+    def test_initial_loading_open_without_position_falls_back_to_100(self):
+        ec = self.create_cover()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('open', {}))
+        self.assertEqual(ec.is_closed, False)
+        self.assertEqual(ec.current_cover_position, 100)
+
+    def test_initial_loading_closed_without_position_falls_back_to_0(self):
+        ec = self.create_cover()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('closed', {}))
+        self.assertEqual(ec.is_closed, True)
+        self.assertEqual(ec.current_cover_position, 0)
 
 
 
