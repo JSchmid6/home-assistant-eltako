@@ -255,6 +255,9 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             command = 0x01 if self._to_physical_direction("up") == "up" else 0x02
             msg = H5_3F_7F(time, command, 1).encode_message(address)
             self.send_message(msg)
+            # A run requested by Home Assistant is never the relief movement of the
+            # "Wendeautomatik": drop the marker so the next telegram counts again.
+            self._lower_end_position_reported_at = None
 
         else:
             LOGGER.warning("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
@@ -340,6 +343,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
 
             msg = H5_3F_7F(time, command, 1).encode_message(address)
             self.send_message(msg)
+            # see open_cover(): the movement requested here is no relief movement.
+            self._lower_end_position_reported_at = None
 
         else:
             LOGGER.warning("[%s %s] Sender EEP %s not supported.", Platform.COVER, str(self.dev_id), self._sender_eep.eep_string)
@@ -363,6 +368,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         if self._sender_eep == H5_3F_7F:
             msg = H5_3F_7F(0, 0x00, 1).encode_message(address)
             self.send_message(msg)
+            # see open_cover(): a following movement was requested by Home Assistant.
+            self._lower_end_position_reported_at = None
 
         if self.general_settings[CONF_FAST_STATUS_CHANGE]:
             self._attr_is_closing = False

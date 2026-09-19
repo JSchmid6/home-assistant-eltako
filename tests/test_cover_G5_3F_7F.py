@@ -225,6 +225,36 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec._attr_is_closed, False)
         self.assertEqual(ec._attr_current_cover_position, 5)
 
+    def test_late_up_run_with_fixed_offset_is_no_reverse_pulse(self):
+        """F2: like above, but the offset is hard-wired - this pins the width of the
+        reverse pulse window (the offset must not be derived from the constant)."""
+        ec = self.create_cover()
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        ec._lower_end_position_reported_at = monotonic() - 30.0
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 5)
+
+    def test_short_up_run_started_by_home_assistant_is_no_reverse_pulse(self):
+        """F1: an up run that Home Assistant requested right after the lower end position
+        was reported must be counted - the request drops the end position marker."""
+        ec = self.create_cover()
+        ec._time_opens = 12
+
+        # the actuator reports its lower end position ...
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        self.assertEqual(ec._attr_current_cover_position, 0)
+
+        # ... Home Assistant requests a small opening step (sent as a 1 s command) ...
+        ec.set_cover_position(position=8)
+        # ... and the actuator reports the 1.0 s up run back
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x0a\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 8)
+
     def test_up_run_without_reported_end_position_is_no_reverse_pulse(self):
         """Runs started from Home Assistant end without an end position telegram, so a short
         up run of a cover that never reported one must not be swallowed."""
