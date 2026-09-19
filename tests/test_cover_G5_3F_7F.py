@@ -102,7 +102,8 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec._attr_is_opening, False)
         self.assertEqual(ec._attr_is_closed, True)
         self.assertEqual(ec._attr_current_cover_position, 0)
-        self.assertEqual(ec._attr_current_cover_tilt_position, 0)
+        # no tilt time configured => no tilt state
+        self.assertEqual(ec._attr_current_cover_tilt_position, None)
 
         # device send acknowledgement for opened
         msg = RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x70', outgoing=False)
@@ -111,7 +112,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec._attr_is_opening, False)
         self.assertEqual(ec._attr_is_closed, False)
         self.assertEqual(ec._attr_current_cover_position, 100)
-        self.assertEqual(ec._attr_current_cover_tilt_position, 100)
+        self.assertEqual(ec._attr_current_cover_tilt_position, None)
 
 
 
@@ -417,7 +418,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, False)
         self.assertEqual(ec.state, 'opening')
         self.assertEqual(ec.current_cover_position, 55)
-        self.assertEqual(ec.current_cover_tilt_position, 20)
+        self.assertEqual(ec.current_cover_tilt_position, None)
 
     def test_initial_loading_closing(self):
         ec = self.create_cover()
@@ -431,7 +432,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, True)
         self.assertEqual(ec.state, 'closing')
         self.assertEqual(ec.current_cover_position, 33)
-        self.assertEqual(ec.current_cover_tilt_position, 10)
+        self.assertEqual(ec.current_cover_tilt_position, None)
 
     def test_initial_loading_open(self):
         ec = self.create_cover()
@@ -445,7 +446,7 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, False)
         self.assertEqual(ec.state, 'open')
         self.assertEqual(ec.current_cover_position, 100)
-        self.assertEqual(ec.current_cover_tilt_position, 100)
+        self.assertEqual(ec.current_cover_tilt_position, None)
 
     def test_initial_loading_closed(self):
         ec = self.create_cover()
@@ -459,7 +460,52 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.is_closing, False)
         self.assertEqual(ec.state, 'closed')
         self.assertEqual(ec.current_cover_position, 0)
+        self.assertEqual(ec.current_cover_tilt_position, None)
+
+
+    def test_cover_without_tilt_time_never_reports_a_tilt_state(self):
+        """A shutter without time_tilts has no slats. Reporting 0/100 would be a position that
+        does not exist on the device - and Home Assistant would offer a tilt control for it."""
+        ec = self.create_cover()
+        self.assertFalse(ec._attr_supported_features & CoverEntityFeature.SET_TILT_POSITION)
+
+        # neither an end position telegram ...
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        self.assertEqual(ec.current_cover_tilt_position, None)
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x70', outgoing=False))
+        self.assertEqual(ec.current_cover_tilt_position, None)
+
+        # ... nor an intermediate position telegram creates one
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x1e\x02\x0a', outgoing=False))
+        self.assertEqual(ec.current_cover_tilt_position, None)
+
+    def test_cover_without_tilt_time_drops_a_restored_tilt_state(self):
+        """An entity that had time_tilts configured earlier must not resurrect its tilt
+        position from the restored state."""
+        ec = self.create_cover()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('open', {'current_position': 42, 'current_tilt_position': 70}))
+        self.assertEqual(ec.current_cover_position, 42)
+        self.assertEqual(ec.current_cover_tilt_position, None)
+
+    def test_blind_keeps_its_tilt_state(self):
+        """The guard must only affect covers without a configured tilt time."""
+        ec = self.create_blind()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('open', {'current_position': 42, 'current_tilt_position': 70}))
+        self.assertEqual(ec.current_cover_tilt_position, 70)
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
         self.assertEqual(ec.current_cover_tilt_position, 0)
+
+    def test_blind_without_restored_tilt_state_falls_back_to_the_end_position(self):
+        ec = self.create_blind()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('open', {}))
+        self.assertEqual(ec.current_cover_tilt_position, 100)
 
 
     def test_runtime_of_end_position_is_not_bigger_than_the_telegram_allows(self):

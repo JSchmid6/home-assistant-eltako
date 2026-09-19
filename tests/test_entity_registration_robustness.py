@@ -60,6 +60,11 @@ class TestCoverStateRestoration(TestCase):
                            "FSB14 - 6", G5_3F_7F, AddressExpression.parse('00-00-B0-06'), H5_3F_7F,
                            'shutter', 24, 25, None)
 
+    def create_blind(self) -> EltakoCover:
+        return EltakoCover(Platform.COVER, GatewayMock(), AddressExpression.parse('00-00-00-06'),
+                           "FSB14 - 6", G5_3F_7F, AddressExpression.parse('00-00-B0-06'), H5_3F_7F,
+                           'blind', 24, 25, 15)
+
     def test_restoring_without_position_attributes_does_not_raise(self):
         """This aborted the registration of the cover entities on a real installation.
 
@@ -107,6 +112,15 @@ class TestCoverStateRestoration(TestCase):
         cover.load_value_initially(LatestStateMock('open', {'current_position': 42, 'current_tilt_position': 7}))
 
         self.assertEqual(cover.current_cover_position, 42)   # saved estimate survives a restart
+        # a shutter without time_tilts has no tilt state which could be restored
+        self.assertIsNone(cover.current_cover_tilt_position)
+
+    def test_restoring_tilt_position_from_attributes(self):
+        cover = self.create_blind()
+
+        cover.load_value_initially(LatestStateMock('open', {'current_position': 42, 'current_tilt_position': 7}))
+
+        self.assertEqual(cover.current_cover_position, 42)
         self.assertEqual(cover.current_cover_tilt_position, 7)
 
     def test_invalidate_position_forgets_estimated_cover_state(self):

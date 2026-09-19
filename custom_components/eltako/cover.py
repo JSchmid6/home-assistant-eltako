@@ -157,7 +157,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         self._attr_is_closing = False
         self._attr_is_closed = not self._invert_direction
         self._attr_current_cover_position = 0 if not self._invert_direction else 100
-        self._attr_current_cover_tilt_position = 0 if not self._invert_direction else 100
+        if self._time_tilts is not None:
+            self._attr_current_cover_tilt_position = 0 if not self._invert_direction else 100
 
 
     def load_value_initially(self, latest_state:State):
@@ -169,8 +170,12 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             # because the cover was moving when Home Assistant restarted.
             # The attributes are not available if the cover was unavailable or unknown before the
             # restart. The state below is authoritative anyway, so a missing position is no error.
+            # Without a configured tilt time the cover has no tilt state at all, so a restored
+            # one is dropped instead of being carried over from an earlier configuration.
+            tilt_supported = self._time_tilts is not None
             self._attr_current_cover_position = latest_state.attributes.get('current_position')
-            self._attr_current_cover_tilt_position = latest_state.attributes.get('current_tilt_position')
+            self._attr_current_cover_tilt_position = (latest_state.attributes.get('current_tilt_position')
+                                                      if tilt_supported else None)
 
             if latest_state.state == CoverState.OPEN:
                 self._attr_is_opening = False
@@ -178,7 +183,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
                 self._attr_is_closed = False
                 if self._attr_current_cover_position is None:
                     self._attr_current_cover_position = 100
-                if self._attr_current_cover_tilt_position is None:
+                if tilt_supported and self._attr_current_cover_tilt_position is None:
                     self._attr_current_cover_tilt_position = 100
             elif latest_state.state == CoverState.CLOSED:
                 self._attr_is_opening = False
@@ -186,7 +191,7 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
                 self._attr_is_closed = True
                 if self._attr_current_cover_position is None:
                     self._attr_current_cover_position = 0
-                if self._attr_current_cover_tilt_position is None:
+                if tilt_supported and self._attr_current_cover_tilt_position is None:
                     self._attr_current_cover_tilt_position = 0
             elif latest_state.state == CoverState.CLOSING:
                 self._attr_is_opening = False
@@ -396,7 +401,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
                 self._attr_is_closing = False
                 self._attr_is_closed = self._invert_direction
                 self._attr_current_cover_position = 100 if not self._invert_direction else 0
-                self._attr_current_cover_tilt_position = 100 if not self._invert_direction else 0
+                if self._time_tilts is not None:
+                    self._attr_current_cover_tilt_position = 100 if not self._invert_direction else 0
 
             ## is received when cover stops at the desired intermediate position
             ## if not close state is always open (close state should be reported with closed message above)

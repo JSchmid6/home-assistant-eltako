@@ -19,6 +19,7 @@ installations. The main features are:
 
 The detailed changes are listed below.
 
+* **Covers without a configured tilt time no longer report a tilt position.** A shutter without `time_tilts` has no slats, so the end position telegrams and the restored state no longer create a tilt position of 0 % or 100 % for it.
 * **Covers with "Wendeautomatik" stay closed.** The short upward run with which FSB14 actuators relieve the curtain after reaching the lower end position is no longer counted as an intermediate position (github issue #221).
 * **Release candidate `2.2.1rc5` prepared.** The example configuration now enables gateway auto-reconnect explicitly and disables the experimental test page for normal operation.
 * **Standalone configurations can be managed from the web UI.** The new *Configurations* page lists saved profiles and local YAML files and supports saving, loading, importing, exporting and switching configurations. Local files are stored below `standalone_configurations/local/`, which is ignored by Git; example configurations are included separately.
