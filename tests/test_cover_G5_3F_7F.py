@@ -4,7 +4,9 @@ from unittest import mock
 from homeassistant.helpers.entity import Entity
 from homeassistant.const import Platform
 from homeassistant.components.cover import CoverEntityFeature
-from custom_components.eltako.cover import EltakoCover
+from custom_components.eltako.cover import (EltakoCover,
+                                            REVERSE_PULSE_MAX_DELAY_AFTER_END_POSITION_IN_SECONDS)
+from time import monotonic
 from eltakobus import AddressExpression, EEP, RPSMessage, Regular4BSMessage, asyncio
 from custom_components.eltako.config.config_helpers import DEFAULT_GENERAL_SETTINGS
 from custom_components.eltako.const import CONF_FAST_STATUS_CHANGE
@@ -182,6 +184,91 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec._attr_is_closed, False)
         self.assertEqual(ec._attr_current_cover_position, 10)
 
+
+
+    def test_reverse_pulse_after_lower_end_position_keeps_cover_closed(self):
+        """github issue #221: FSB14 actuators with "Wendeautomatik" relieve the curtain with a
+        short up run after the lower end position. That is no intermediate position."""
+        ec = self.create_cover()
+
+        # the actuator reports its lower end position ...
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        # ... and 0.5 s of upward movement right afterwards
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, True)
+        self.assertEqual(ec._attr_is_opening, False)
+        self.assertEqual(ec._attr_is_closing, False)
+        self.assertEqual(ec._attr_current_cover_position, 0)
+        self.assertEqual(ec.state, 'closed')
+
+    def test_long_up_run_after_lower_end_position_is_no_reverse_pulse(self):
+        """Only the short relief movement is swallowed - a real run still counts."""
+        ec = self.create_cover()
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x1e\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 30)
+
+    def test_late_up_run_is_no_reverse_pulse(self):
+        """The relief movement follows the end position immediately, a later run does not."""
+        ec = self.create_cover()
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        ec._lower_end_position_reported_at = (monotonic()
+                                              - REVERSE_PULSE_MAX_DELAY_AFTER_END_POSITION_IN_SECONDS - 1.0)
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 5)
+
+    def test_up_run_without_reported_end_position_is_no_reverse_pulse(self):
+        """Runs started from Home Assistant end without an end position telegram, so a short
+        up run of a cover that never reported one must not be swallowed."""
+        ec = self.create_cover()
+        ec._attr_current_cover_position = 0
+
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 5)
+
+    def test_reverse_pulse_is_swallowed_only_once(self):
+        """The actuator relieves the curtain once. Everything after that is a real movement."""
+        ec = self.create_cover()
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_is_closed, False)
+        self.assertEqual(ec._attr_current_cover_position, 5)
+
+    def test_invalidated_position_is_not_restored_by_a_reverse_pulse(self):
+        """Whoever invalidates the position wants the estimate gone - including the end
+        position the actuator reported just before."""
+        ec = self.create_cover()
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        ec.invalidate_position()
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec._attr_current_cover_position, 5)
+
+    def test_inverted_cover_ignores_reverse_pulse_at_its_lower_end_position(self):
+        """With invert_direction the lower end position is logically open. The relief movement
+        must not move the cover away from it either."""
+        ec = self.create_cover(invert_direction=True)
+
+        ec.value_changed(RPSMessage(address=b'\x00\x00\x00\x01', status=b'\x30', data=b'\x50', outgoing=False))
+        self.assertEqual(ec.current_cover_position, 100)
+
+        ec.value_changed(Regular4BSMessage(address=b'\x00\x00\x00\x01', status=b'\x20', data=b'\x00\x05\x01\x0a', outgoing=False))
+
+        self.assertEqual(ec.is_closed, False)
+        self.assertEqual(ec.current_cover_position, 100)
 
 
     def test_open_cover(self):

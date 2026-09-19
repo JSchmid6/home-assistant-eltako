@@ -25,6 +25,15 @@ from .core.gateway import EnOceanGateway
 from .const import CONF_SENDER, CONF_TIME_CLOSES, CONF_TIME_OPENS, CONF_TIME_TILTS, LOGGER
 from .core.integration import get_gateway_from_hass, get_device_config_for_gateway
 import asyncio
+from time import monotonic
+
+
+# FSB14 actuators with "Wendeautomatik" briefly reverse the cover after it has reached its
+# lower end position in order to relieve the curtain. The actuator reports that as a short
+# physical up run right after the end position telegram. It must not be counted as an
+# intermediate position, otherwise a closed cover shows up as "open 1-3 %". (issue #221)
+REVERSE_PULSE_MAX_DURATION_IN_SECONDS = 1.0
+REVERSE_PULSE_MAX_DELAY_AFTER_END_POSITION_IN_SECONDS = 5.0
 
 
 async def _async_invalidate_cover_position(call: ServiceCall, hass: HomeAssistant) -> None:
@@ -102,6 +111,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         self._time_opens = time_opens
         self._time_tilts = time_tilts
         self._invert_direction = bool(invert_direction)
+        # monotonic timestamp of the last lower end position telegram, see REVERSE_PULSE_* constants
+        self._lower_end_position_reported_at = None
 
         # Positions are estimated from the actuator's movement runtime. The
         # value remains unknown until a telegram or restored state provides a
@@ -138,6 +149,15 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         else:
             self._attr_is_opening = False
             self._attr_is_closing = True
+
+
+    def _apply_lower_end_position(self) -> None:
+        """Apply the state the actuator reports when it stands in its lower end position."""
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        self._attr_is_closed = not self._invert_direction
+        self._attr_current_cover_position = 0 if not self._invert_direction else 100
+        self._attr_current_cover_tilt_position = 0 if not self._invert_direction else 100
 
 
     def load_value_initially(self, latest_state:State):
@@ -208,6 +228,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         self._attr_is_opening = False
         self._attr_is_closing = False
         self._attr_is_closed = None
+        # an end position which was forgotten must not come back through a reverse pulse
+        self._lower_end_position_reported_at = None
         self.schedule_update_ha_state()
 
     def open_cover(self, **kwargs: Any) -> None:
@@ -363,12 +385,9 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
             if decoded.state == 0x02: # down
                 self._set_moving_state(self._to_logical_direction("down"))
                 self._attr_is_closed = False
-            elif decoded.state == 0x50: # closed
-                self._attr_is_opening = False
-                self._attr_is_closing = False
-                self._attr_is_closed = not self._invert_direction
-                self._attr_current_cover_position = 0 if not self._invert_direction else 100
-                self._attr_current_cover_tilt_position = 0 if not self._invert_direction else 100
+            elif decoded.state == 0x50: # closed (lower end position)
+                self._apply_lower_end_position()
+                self._lower_end_position_reported_at = monotonic()
             elif decoded.state == 0x01: # up
                 self._set_moving_state(self._to_logical_direction("up"))
                 self._attr_is_closed = False
@@ -389,6 +408,22 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
                 time_in_seconds = decoded.time / 10.0
 
                 physical_direction = "up" if decoded.direction == 0x01 else "down"
+
+                ## A short physical up run shortly after the lower end position was reported
+                ## is the relief movement of the "Wendeautomatik" and still belongs to the
+                ## closing run. Runs started from Home Assistant end without an end position
+                ## telegram, so their marker is None and they are never affected.
+                if (physical_direction == "up"
+                        and time_in_seconds <= REVERSE_PULSE_MAX_DURATION_IN_SECONDS
+                        and self._lower_end_position_reported_at is not None
+                        and monotonic() - self._lower_end_position_reported_at <= REVERSE_PULSE_MAX_DELAY_AFTER_END_POSITION_IN_SECONDS):
+                    self._apply_lower_end_position()
+                    self._lower_end_position_reported_at = None
+                    LOGGER.debug(f"[cover {self.dev_id}] ignored reverse pulse of {time_in_seconds}s "
+                                 f"after reaching the lower end position")
+                    self.schedule_update_ha_state()
+                    return
+
                 if self._to_logical_direction(physical_direction) == "up":
                     # If the latest state is unknown, the cover position
                     # will be set to None, therefore we have to guess

@@ -19,6 +19,7 @@ installations. The main features are:
 
 The detailed changes are listed below.
 
+* **Covers with "Wendeautomatik" stay closed.** The short upward run with which FSB14 actuators relieve the curtain after reaching the lower end position is no longer counted as an intermediate position (github issue #221).
 * **Release candidate `2.2.1rc5` prepared.** The example configuration now enables gateway auto-reconnect explicitly and disables the experimental test page for normal operation.
 * **Standalone configurations can be managed from the web UI.** The new *Configurations* page lists saved profiles and local YAML files and supports saving, loading, importing, exporting and switching configurations. Local files are stored below `standalone_configurations/local/`, which is ignored by Git; example configurations are included separately.
 * **Devices are configuration data.** The Devices page now uses the hierarchy view only; import/export includes UI-created devices, and an unknown device can be saved under `eltako: unknown` without creating a Home Assistant entity.
