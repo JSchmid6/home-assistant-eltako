@@ -508,6 +508,34 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec.current_cover_tilt_position, 100)
 
 
+    def test_initial_loading_open_keeps_an_intermediate_position(self):
+        """github issue #212: a partly open cover must not jump to 100 % after a restart.
+        The restored position wins, 'open' is only the fallback if there is none."""
+        ec = self.create_cover()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('open', {'current_position': 42}))
+        self.assertEqual(ec.is_closed, False)
+        self.assertEqual(ec.state, 'open')
+        self.assertEqual(ec.current_cover_position, 42)
+
+    def test_initial_loading_open_without_position_falls_back_to_100(self):
+        ec = self.create_cover()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('open', {}))
+        self.assertEqual(ec.is_closed, False)
+        self.assertEqual(ec.current_cover_position, 100)
+
+    def test_initial_loading_closed_without_position_falls_back_to_0(self):
+        ec = self.create_cover()
+        ec._attr_is_closed = None
+
+        ec.load_value_initially(LatestStateMock('closed', {}))
+        self.assertEqual(ec.is_closed, True)
+        self.assertEqual(ec.current_cover_position, 0)
+
+
     def test_runtime_of_end_position_is_not_bigger_than_the_telegram_allows(self):
         """The runtime is one byte. time_opens/time_closes may be 255 (max of the schema),
         so full runtime + 1 must be capped - otherwise encoding the telegram fails."""
