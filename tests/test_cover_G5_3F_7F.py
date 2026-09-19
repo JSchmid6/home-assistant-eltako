@@ -255,6 +255,26 @@ class TestCover(unittest.TestCase):
         self.assertEqual(ec._attr_is_closed, False)
         self.assertEqual(ec._attr_current_cover_position, 8)
 
+    def test_float_runtimes_from_the_configuration_are_sent_as_integers(self):
+        """Regression: times in the configuration may be floats (e.g. 10.0). eltakobus raises
+        for float drive times - every full-runtime telegram must carry an int (all four sites)."""
+        ec = self.create_cover()
+        ec._time_opens = 12.0
+        ec._time_closes = 10.0
+
+        ec.open_cover()
+        self.assertEqual(self.last_sent_command.body[3], 13)  # int(12.0 + 1)
+
+        ec.close_cover()
+        self.assertEqual(self.last_sent_command.body[3], 11)  # int(10.0 + 1)
+
+        ec._attr_current_cover_position = 50
+        ec.set_cover_position(position=100)
+        self.assertEqual(self.last_sent_command.body[3], 13)
+
+        ec.set_cover_position(position=0)
+        self.assertEqual(self.last_sent_command.body[3], 11)
+
     def test_up_run_without_reported_end_position_is_no_reverse_pulse(self):
         """Runs started from Home Assistant end without an end position telegram, so a short
         up run of a cover that never reported one must not be swallowed."""

@@ -245,7 +245,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         # position (and therefore recalibrates itself). 255 is the maximum the telegram can
         # carry - a bigger value would make the encoding fail.
         if self._time_opens is not None:
-            time = min(self._time_opens + 1, 255)
+            # int: the configuration may provide floats (10.0) - eltakobus rejects a float time.
+            time = int(min(self._time_opens + 1, 255))
         else:
             time = 255
 
@@ -277,7 +278,8 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         # As with opening, the extra second makes the closed end position a
         # reliable reference; the protocol field is limited to 255.
         if self._time_closes is not None:
-            time = min(self._time_closes + 1, 255)
+            # int: the configuration may provide floats (10.0) - eltakobus rejects a float time.
+            time = int(min(self._time_closes + 1, 255))
         else:
             time = 255
 
@@ -320,10 +322,12 @@ class EltakoCover(EltakoEntity, CoverEntity, RestoreEntity):
         elif position == 100:
             # drive into the end position (full runtime + 1s), see open_cover
             direction = "up"
-            time = min(self._time_opens + 1, 255)
+            # int: the configuration may provide floats (10.0) - eltakobus rejects a float time.
+            time = int(min(self._time_opens + 1, 255))
         elif position == 0:
             direction = "down"
-            time = min(self._time_closes + 1, 255)
+            # int: the configuration may provide floats (10.0) - eltakobus rejects a float time.
+            time = int(min(self._time_closes + 1, 255))
         elif position > self._attr_current_cover_position:
             direction = "up"
             # Convert the percentage difference into the actuator's runtime.
