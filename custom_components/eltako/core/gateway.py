@@ -337,6 +337,11 @@ class EnOceanGateway:
     # with "Not a valid baudrate", which crashed the reader thread in an endless retry loop.
     DEFAULT_BAUD_RATE_FOR_URL = 57600
 
+    # Passed to the serial interface when the gateway configuration does not set a message
+    # delay. `None` would override the default of the serial interface (0.01) and crash its
+    # reader thread on the first telegram: time.sleep(None) -> TypeError.
+    DEFAULT_MESSAGE_DELAY = 0.01
+
     def _esp2_connection(self) -> tuple[str, int]:
         """(url, baud rate) RS485SerialInterfaceV2 is opened with.
 
@@ -370,7 +375,8 @@ class EnOceanGateway:
             self._bus = RS485SerialInterfaceV2(url,
                                                baud_rate=baud_rate,
                                                callback=self._callback_receive_message_from_serial_bus,
-                                               delay_message=self._message_delay,
+                                               delay_message=self._message_delay if self._message_delay is not None
+                                               else self.DEFAULT_MESSAGE_DELAY,
                                                auto_reconnect=self._auto_reconnect)
 
         elif GatewayDeviceType.is_lan_gateway(self.dev_type) and not GatewayDeviceType.is_esp2_gateway(self.dev_type):
